@@ -17,15 +17,17 @@
             margin-bottom: 20px;
         }
 
-        /* הגדרות מכולת הוידאו והמסגרת */
-        .video-container {
-            position: relative; /* חובה כדי למקם את המסגרת מעל */
-            width: 100%;
-            max-width: 450px; /* רוחב מקסימלי נוח לצפייה בטלפון */
-            margin: 20px auto;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            overflow: hidden; /* לוודא שהמסגרת והווידאו לא גולשים */
+/* המסגרת שתופיע מעל הוידאו */
+        .frame-overlay {
+            position: absolute;
+            top: 5%; 
+            left: 25%;    /* 25% רווח משמאל כדי למרכז מסגרת ברוחב 50% */
+            width: 50%;   /* רוחב צר יותר ליחס A4 */
+            height: 90%;  /* גובה שמור */
+            border: 4px dashed red; 
+            pointer-events: none; 
+            z-index: 10;
+            box-sizing: border-box;
         }
 
         /* רכיב הווידאו עצמו */
@@ -91,4 +93,5 @@
     
     <script src="scanner.js"></script>
 </body>
+
 </html>
