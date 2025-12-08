@@ -11,24 +11,25 @@ let isDocumentFound = false; // משתנה מעקב האם המסמך נראה �
 let currentSrc = null; // משתנה Mat שיכיל את התמונה הנוכחית מהווידאו
 
 // --- הגדרות המסגרת (ROI - Region of Interest) ---
-// אנו משתמשים בערכים שנקבעו ב-CSS למסגרת האנכית (left: 20%, top: 5%)
-const FRAME_START_X_PCT = 0.20; // 20% מהקצה השמאלי
-const FRAME_START_Y_PCT = 0.05; // 5% מהקצה העליון 
-// סף שטח מינימלי למסמך (עודכן ל-5000 לאור בעיות הרגישות)
-const MIN_DOCUMENT_AREA = 5000; 
-// דיוק קירוב (עודכן ל-0.04 כדי להיות סלחני יותר למסמכים מקומטים)
-const APPROX_PRECISION = 0.04; 
+// *** עדכון: תואם ל-CSS החדש (left: 25%) ***
+const FRAME_START_X_PCT = 0.25; 
+const FRAME_START_Y_PCT = 0.05; 
+// *** עדכון: הורדנו את הסף ל-4000 (יותר סלחני) ***
+const MIN_DOCUMENT_AREA = 4000; 
+// *** עדכון: הגברנו את דיוק הקירוב ל-0.05 (מאוד סלחני לרעש/קימוטים) ***
+const APPROX_PRECISION = 0.05; 
 
 // --- פונקציה המופעלת כאשר OpenCV.js נטען ---
 function onOpenCvReady() {
     console.log("OpenCV.js נטען בהצלחה.");
-    scanButton.disabled = true; // חוסמים את הכפתור בהתחלה
+    scanButton.disabled = true; 
     scanButton.textContent = "מקם מסמך במסגרת...";
 
     // פונקציית עזר להפעלת המצלמה עם FacingMode
     function startCamera(facingMode) {
         const constraints = { 
             video: { 
+                // שימוש במצלמה האחורית
                 facingMode: facingMode 
             }
         };
@@ -40,11 +41,9 @@ function onOpenCvReady() {
                 
                 video.addEventListener('canplay', function(ev){
                     if (!streaming) {
-                        // קביעת גודל הקנבס לגודל הוידאו
                         canvasOutput.width = video.videoWidth;
                         canvasOutput.height = video.videoHeight;
                         streaming = true;
-                        // הפעלת לולאת ה-Tick לעיבוד בזמן אמת
                         requestAnimationFrame(processVideoTick); 
                     }
                 }, false);
@@ -52,10 +51,10 @@ function onOpenCvReady() {
             .catch(function (err) {
                 console.error("שגיאת מצלמה עם facingMode: " + facingMode, err);
                 
-                // Fallback: אם ניסיון המצלמה האחורית נכשל, נסה שוב עם מצב ברירת המחדל (קדמית/כל מצלמה)
                 if (facingMode === 'environment') {
                     console.log("נסיון מעבר למצלמה קדמית/ברירת מחדל...");
-                    startCamera(true); // true ינסה כל מצלמה זמינה (לרוב הקדמית במחשבים)
+                    // Fallback: נסיון חוזר עם מצב ברירת מחדל (קדמית/אחורית רגיל)
+                    startCamera(true); 
                 } else {
                     scanButton.textContent = "❌ שגיאה: המצלמה נכשלה לחלוטין.";
                     console.error("המצלמה נכשלה לחלוטין.");
@@ -72,15 +71,11 @@ function onOpenCvReady() {
     scanButton.onclick = function() {
         if (!isDocumentFound) return;
         
-        // עצירת הלולאה כדי לצלם פריים סטטי
         streaming = false;
-
-        // הסתר את הוידאו והצג את הקנבס המעובד
         videoContainer.style.display = 'none';
         canvasOutput.style.display = 'block';
         scanButton.textContent = "עיבוד הסריקה הושלם";
         
-        // בצע עיבוד תמונה של OpenCV על הפריים האחרון שצולם
         processImageFinal(currentSrc);
     };
 }
@@ -91,14 +86,11 @@ function processVideoTick() {
     if (!streaming) return;
 
     try {
-        // צייר את הפריים הנוכחי מהווידאו לקנבס
         context.drawImage(video, 0, 0, canvasOutput.width, canvasOutput.height);
         
-        // קרא את התמונה מהקנבס למטריצה (Mat) של OpenCV
         if (currentSrc) currentSrc.delete();
         currentSrc = cv.imread(canvasOutput);
         
-        // בדיקת תקינות: האם המסמך נמצא בתוך המסגרת?
         let found = checkDocumentBounds(currentSrc); 
         
         if (found) {
@@ -116,11 +108,9 @@ function processVideoTick() {
         }
         
     } catch (e) {
-        // שגיאות בזיכרון או בעיבוד יציגו הודעה כאן
         // console.error("שגיאה בלולאת העיבוד:", e);
     }
     
-    // קריאה חוזרת לפונקציה
     requestAnimationFrame(processVideoTick); 
 }
 
@@ -152,7 +142,6 @@ function checkDocumentBounds(src) {
                 maxContour = contour;
             }
         }
-        contour.delete(); 
     }
     
     if (!maxContour) {
@@ -174,11 +163,11 @@ function checkDocumentBounds(src) {
             cornerPoints.push({ x: approx.data32S[i * 2], y: approx.data32S[i * 2 + 1] });
         }
         
-        // 5. בדיקת גבולות המסגרת האדומה (ROI) - שימוש בקבועי ה-CSS
-        const frameXStart = src.cols * FRAME_START_X_PCT; // 20%
-        const frameYStart = src.rows * FRAME_START_Y_PCT; // 5%
-        const frameXEnd = src.cols * (1 - FRAME_START_X_PCT); // 80%
-        const frameYEnd = src.rows * (1 - FRAME_START_Y_PCT); // 95%
+        // 5. בדיקת גבולות המסגרת האדומה (ROI)
+        const frameXStart = src.cols * FRAME_START_X_PCT; 
+        const frameYStart = src.rows * FRAME_START_Y_PCT;
+        const frameXEnd = src.cols * (1 - FRAME_START_X_PCT); 
+        const frameYEnd = src.rows * (1 - FRAME_START_Y_PCT); 
 
         // בדיקה: האם כל 4 הפינות נמצאות בתוך גבולות המסגרת?
         let allInBounds = cornerPoints.every(p => 
@@ -229,11 +218,10 @@ function processImageFinal(src) {
                 maxContour = contour;
             }
         }
-        contour.delete(); 
+        
     }
 
     if (!maxContour) {
-        // הצג את המקור אם לא נמצא
         cv.imshow('canvasOutput', src); 
         src.delete(); gray.delete(); blur.delete(); canny.delete(); contours.delete(); hierarchy.delete();
         return;
@@ -245,7 +233,6 @@ function processImageFinal(src) {
     cv.approxPolyDP(maxContour, approx, APPROX_PRECISION * perimeter, true); 
 
     if (approx.rows !== 4) {
-        // הצג את המקור אם לא נמצאו 4 פינות
         cv.imshow('canvasOutput', src); 
         approx.delete();
         src.delete(); gray.delete(); blur.delete(); canny.delete(); contours.delete(); hierarchy.delete();
@@ -258,15 +245,14 @@ function processImageFinal(src) {
         cornerPoints.push({ x: approx.data32S[i * 2], y: approx.data32S[i * 2 + 1] });
     }
 
-    // פונקציית עזר למיון הפינות (חובה ל-warpPerspective)
     function orderPoints(pts) {
         let sum = pts.map(p => p.x + p.y);
         let diff = pts.map(p => p.x - p.y);
         
-        let tl = pts[sum.indexOf(Math.min(...sum))]; // Top-Left (TL)
-        let br = pts[sum.indexOf(Math.max(...sum))]; // Bottom-Right (BR)
-        let tr = pts[diff.indexOf(Math.min(...diff))]; // Top-Right (TR)
-        let bl = pts[diff.indexOf(Math.max(...diff))]; // Bottom-Left (BL)
+        let tl = pts[sum.indexOf(Math.min(...sum))]; 
+        let br = pts[sum.indexOf(Math.max(...sum))]; 
+        let tr = pts[diff.indexOf(Math.min(...diff))]; 
+        let bl = pts[diff.indexOf(Math.max(...diff))]; 
 
         return [tl, tr, br, bl]; 
     }
@@ -322,7 +308,6 @@ function processImageFinal(src) {
     contours.delete(); hierarchy.delete(); approx.delete();
     srcPointsMat.delete(); destPointsMat.delete(); M.delete();
     finalDst.delete(); finalGray.delete();
-    // src לא נמחק כי הוא הגיע כארגומנט ונמחק על ידי הפונקציה הקוראת
     
     console.log("עיבוד תמונה הושלם. בוצע תיקון פרספקטיבה ושיפור איכות.");
 }
