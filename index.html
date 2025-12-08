@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OpenCV.js Document Scanner POC</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        /* הגדרות כלליות */
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 20px;
+            background-color: #f4f4f9;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        /* הגדרות מכולת הוידאו והמסגרת */
+        .video-container {
+            position: relative; /* חובה כדי למקם את המסגרת מעל */
+            width: 100%;
+            max-width: 450px; /* רוחב מקסימלי נוח לצפייה בטלפון */
+            margin: 20px auto;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden; /* לוודא שהמסגרת והווידאו לא גולשים */
+        }
+
+        /* רכיב הווידאו עצמו */
+        #videoElement {
+            width: 100%;
+            display: block; /* כדי למנוע רווחים מיותרים */
+        }
+
+/* המסגרת שתופיע מעל הוידאו */
+        .frame-overlay {
+                    position: absolute;
+                    top: 5%;      /* 5% רווח מלמעלה */
+                    left: 20%;    /* 20% רווח משמאל */
+                    width: 60%;   /* רוחב כללי */
+                    height: 90%;  /* גובה כללי (יוצר מלבן אנכי) */
+                    border: 4px dashed red; 
+                    pointer-events: none; 
+                    z-index: 10;
+                    box-sizing: border-box;
+                }
+        /* כפתור הסריקה */
+        #scanButton {
+            background-color: #4CAF50;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 18px;
+            margin-top: 10px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        #scanButton:hover {
+            background-color: #45a049;
+        }
+        
+        /* קנבס להצגת התוצאה הסרוקה */
+        #canvasOutput {
+            max-width: 450px;
+            margin: 20px auto;
+            border: 2px solid #333;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body>
+    <h1>סורק מסמכים POC (בדיקת היתכנות)</h1>
+    <p>אנא מקם את המסמך שלך בתוך המסגרת האדומה ולחץ על כפתור הסריקה.</p>
+    
+    <div class="video-container">
+        <video id="videoElement" autoplay></video>
+        <div class="frame-overlay"></div>
+    </div>
+    
+    <button id="scanButton">בצע צילום ועיבוד</button>
+    
+    <canvas id="canvasOutput" style="display: none;"></canvas>
+    
+    <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady()"></script>
+    
+    <script src="scanner.js"></script>
+</body>
+</html>
