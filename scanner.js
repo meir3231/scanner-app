@@ -2,20 +2,22 @@
 const video = document.getElementById('videoElement');
 const canvasOutput = document.getElementById('canvasOutput');
 const scanButton = document.getElementById('scanButton');
-const context = canvasOutput.getContext('2d');
+// הוספת הארגומנט willReadFrequently לשיפור הביצועים בלולאת הוידאו
+const context = canvasOutput.getContext('2d', { willReadFrequently: true });
 const videoContainer = document.querySelector('.video-container');
 
 let streaming = false;
-let isDocumentFound = false; // משתנה מעקב חדש
+let isDocumentFound = false; // משתנה מעקב האם המסמך נראה ונמצא בתוך המסגרת
 let currentSrc = null; // משתנה Mat שיכיל את התמונה הנוכחית מהווידאו
 
 // --- הגדרות המסגרת (ROI - Region of Interest) ---
-// אנו מגדירים את המסגרת האדומה שלנו כאזור החיתוך
-// הערכים הללו תואמים ל-10% רווח מכל צד שקבענו ב-CSS
-// --- הגדרות המסגרת (ROI - Region of Interest) ---
-// הערכים הללו תואמים להגדרות ה-CSS החדשות!
+// אנו משתמשים בערכים שנקבעו ב-CSS למסגרת האנכית (left: 20%, top: 5%)
 const FRAME_START_X_PCT = 0.20; // 20% מהקצה השמאלי
-const FRAME_START_Y_PCT = 0.05; // 5% מהקצה העליון
+const FRAME_START_Y_PCT = 0.05; // 5% מהקצה העליון 
+// סף שטח מינימלי למסמך (עודכן ל-5000 לאור בעיות הרגישות)
+const MIN_DOCUMENT_AREA = 5000; 
+// דיוק קירוב (עודכן ל-0.04 כדי להיות סלחני יותר למסמכים מקומטים)
+const APPROX_PRECISION = 0.04; 
 
 // --- פונקציה המופעלת כאשר OpenCV.js נטען ---
 function onOpenCvReady() {
@@ -23,40 +25,62 @@ function onOpenCvReady() {
     scanButton.disabled = true; // חוסמים את הכפתור בהתחלה
     scanButton.textContent = "מקם מסמך במסגרת...";
 
-    if (navigator.mediaDevices.getUserMedia) {
-        navigator.mediaDevices.getUserMedia({ video: true })
+    // פונקציית עזר להפעלת המצלמה עם FacingMode
+    function startCamera(facingMode) {
+        const constraints = { 
+            video: { 
+                facingMode: facingMode 
+            }
+        };
+
+        navigator.mediaDevices.getUserMedia(constraints)
             .then(function (stream) {
                 video.srcObject = stream;
                 video.play();
+                
                 video.addEventListener('canplay', function(ev){
                     if (!streaming) {
+                        // קביעת גודל הקנבס לגודל הוידאו
                         canvasOutput.width = video.videoWidth;
                         canvasOutput.height = video.videoHeight;
                         streaming = true;
                         // הפעלת לולאת ה-Tick לעיבוד בזמן אמת
-                        setTimeout(processVideoTick, 100); 
+                        requestAnimationFrame(processVideoTick); 
                     }
                 }, false);
             })
             .catch(function (err) {
-                console.error("שגיאת מצלמה: " + err);
+                console.error("שגיאת מצלמה עם facingMode: " + facingMode, err);
+                
+                // Fallback: אם ניסיון המצלמה האחורית נכשל, נסה שוב עם מצב ברירת המחדל (קדמית/כל מצלמה)
+                if (facingMode === 'environment') {
+                    console.log("נסיון מעבר למצלמה קדמית/ברירת מחדל...");
+                    startCamera(true); // true ינסה כל מצלמה זמינה (לרוב הקדמית במחשבים)
+                } else {
+                    scanButton.textContent = "❌ שגיאה: המצלמה נכשלה לחלוטין.";
+                    console.error("המצלמה נכשלה לחלוטין.");
+                }
             });
     }
 
+    // נסה קודם להפעיל את המצלמה האחורית (environment)
+    if (navigator.mediaDevices.getUserMedia) {
+        startCamera('environment'); 
+    }
+    
     // הגדרת כפתור הצילום - מופעל רק כשהמסמך נמצא
     scanButton.onclick = function() {
         if (!isDocumentFound) return;
         
         // עצירת הלולאה כדי לצלם פריים סטטי
-        stopVideoProcessing();
+        streaming = false;
 
         // הסתר את הוידאו והצג את הקנבס המעובד
         videoContainer.style.display = 'none';
         canvasOutput.style.display = 'block';
         scanButton.textContent = "עיבוד הסריקה הושלם";
         
-        // בצע עיבוד תמונה של OpenCV על הפריים האחרון
-        // currentSrc מכיל את התמונה הסטטית האחרונה שצולמה
+        // בצע עיבוד תמונה של OpenCV על הפריים האחרון שצולם
         processImageFinal(currentSrc);
     };
 }
@@ -84,7 +108,7 @@ function processVideoTick() {
                 isDocumentFound = true;
             }
         } else {
-             if (isDocumentFound) {
+             if (isDocumentFound || scanButton.textContent === "✅ צלם וסרוק!") {
                 scanButton.disabled = true;
                 scanButton.textContent = "מקם מסמך במסגרת...";
                 isDocumentFound = false;
@@ -92,15 +116,12 @@ function processVideoTick() {
         }
         
     } catch (e) {
-        console.error("שגיאה בלולאת העיבוד:", e);
+        // שגיאות בזיכרון או בעיבוד יציגו הודעה כאן
+        // console.error("שגיאה בלולאת העיבוד:", e);
     }
     
-    // קריאה חוזרת לפונקציה לאחר 30 מילישניות (כ-30 פריימים/שנייה)
+    // קריאה חוזרת לפונקציה
     requestAnimationFrame(processVideoTick); 
-}
-
-function stopVideoProcessing() {
-    streaming = false;
 }
 
 
@@ -113,54 +134,51 @@ function checkDocumentBounds(src) {
     let hierarchy = new cv.Mat();
     let maxContour = null;
 
-    // עיבוד ראשוני
+    // 1. עיבוד ראשוני
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
     cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0, 0);
     cv.Canny(blur, canny, 75, 200, 3, false);
     cv.findContours(canny, contours, hierarchy, cv.RETR_CCOMP, cv.CHAIN_APPROX_SIMPLE);
 
-    // חיפוש המתאר הגדול ביותר
+    // 2. חיפוש המתאר הגדול ביותר
     let maxArea = 0;
-        for (let i = 0; i < contours.size(); ++i) {
-            let contour = contours.get(i);
-            let area = cv.contourArea(contour);
-            
-            // **שינוי כאן:** הגדלנו את סף השטח - מומלץ להתחיל עם 10000 
-            if (area > 5000) { 
-                if (area > maxArea) {
-                    maxArea = area;
-                    maxContour = contour;
-                }
+    for (let i = 0; i < contours.size(); ++i) {
+        let contour = contours.get(i);
+        let area = cv.contourArea(contour);
+        
+        if (area > MIN_DOCUMENT_AREA) { 
+            if (area > maxArea) {
+                maxArea = area;
+                maxContour = contour;
             }
         }
+        contour.delete(); 
+    }
     
-    // אם לא נמצא מתאר גדול, שחרר זיכרון וצא
     if (!maxContour) {
         gray.delete(); blur.delete(); canny.delete(); contours.delete(); hierarchy.delete();
         return false;
     }
 
-// 5. קירוב ומציאת 4 הפינות
+    // 3. קירוב ומציאת 4 הפינות
     let approx = new cv.Mat();
     let perimeter = cv.arcLength(maxContour, true);
-    
-    // שינוי: חזרה לדיוק סלחני יותר (0.04) כדי למנוע נעילה על מסמכים מעט מקומטים.
-    cv.approxPolyDP(maxContour, approx, 0.04 * perimeter, true);
+    cv.approxPolyDP(maxContour, approx, APPROX_PRECISION * perimeter, true); 
 
-        let isDocumentValid = false;
+    let isDocumentValid = false;
 
-    // ודא שמצאנו 4 פינות
+    // 4. ודא שמצאנו 4 פינות
     if (approx.rows === 4) {
         let cornerPoints = [];
         for (let i = 0; i < approx.rows; i++) {
             cornerPoints.push({ x: approx.data32S[i * 2], y: approx.data32S[i * 2 + 1] });
         }
         
-        // הגדרת גבולות המסגרת האדומה (ROI)
-        const frameXStart = src.cols * FRAME_PERCENT_X;
-        const frameYStart = src.rows * FRAME_PERCENT_Y;
-        const frameXEnd = src.cols * (1 - FRAME_PERCENT_X);
-        const frameYEnd = src.rows * (1 - FRAME_PERCENT_Y);
+        // 5. בדיקת גבולות המסגרת האדומה (ROI) - שימוש בקבועי ה-CSS
+        const frameXStart = src.cols * FRAME_START_X_PCT; // 20%
+        const frameYStart = src.rows * FRAME_START_Y_PCT; // 5%
+        const frameXEnd = src.cols * (1 - FRAME_START_X_PCT); // 80%
+        const frameYEnd = src.rows * (1 - FRAME_START_Y_PCT); // 95%
 
         // בדיקה: האם כל 4 הפינות נמצאות בתוך גבולות המסגרת?
         let allInBounds = cornerPoints.every(p => 
@@ -171,7 +189,7 @@ function checkDocumentBounds(src) {
         isDocumentValid = allInBounds;
     }
     
-    // שחרור זיכרון
+    // 6. שחרור זיכרון
     gray.delete(); blur.delete(); canny.delete(); contours.delete(); hierarchy.delete();
     if (maxContour) maxContour.delete();
     if (approx) approx.delete();
@@ -180,24 +198,20 @@ function checkDocumentBounds(src) {
 }
 
 
-// --- פונקציית העיבוד הסופי (Warp Perspective) - כמעט זהה לקוד הקודם ---
-// [הכנס לכאן את כל הקוד של פונקציית processImage() הקודמת, וקרא לה processImageFinal]
-
+// --- פונקציית העיבוד הסופי (Warp Perspective) ---
 function processImageFinal(src) {
-    // ... כל הקוד שלב 3 עד 12 של processImage() מהתשובה הקודמת...
-    // *הערה:* השתמש ב-src שקיבלת כארגומנט במקום cv.imread(canvasOutput)
+    if (!src) return;
     
-    let dst = new cv.Mat();
     let gray = new cv.Mat();
     let blur = new cv.Mat();
     let canny = new cv.Mat();
     
-    // 2. הכנה ועיבוד ראשוני (חזרה על מציאת המתאר, כדי לקבל את הפינות המדויקות)
+    // 1. הכנה ועיבוד ראשוני
     cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0); 
     cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0, 0); 
     cv.Canny(blur, canny, 75, 200, 3, false); 
 
-    // 3. מציאת המתארים (Contours)
+    // 2. מציאת המתארים וחיפוש המתאר הגדול ביותר
     let contours = new cv.MatVector();
     let hierarchy = new cv.Mat();
     cv.findContours(canny, contours, hierarchy, cv.RETR_CCOMP, cv.CHAIN_APPROX_SIMPLE);
@@ -205,12 +219,11 @@ function processImageFinal(src) {
     let maxArea = 0;
     let maxContour = null;
 
-    // 4. חיפוש המתאר הגדול ביותר
     for (let i = 0; i < contours.size(); ++i) {
         let contour = contours.get(i);
         let area = cv.contourArea(contour);
         
-        if (area > 5000) { 
+        if (area > MIN_DOCUMENT_AREA) { 
             if (area > maxArea) {
                 maxArea = area;
                 maxContour = contour;
@@ -220,48 +233,47 @@ function processImageFinal(src) {
     }
 
     if (!maxContour) {
-        // אם לא נמצא, נציג את המקור
+        // הצג את המקור אם לא נמצא
         cv.imshow('canvasOutput', src); 
         src.delete(); gray.delete(); blur.delete(); canny.delete(); contours.delete(); hierarchy.delete();
         return;
     }
     
-// 5. קירוב (Approximation) המתאר ומציאת 4 הפינות (ב-processImageFinal)
+    // 3. קירוב ומציאת 4 הפינות
     let approx = new cv.Mat();
     let perimeter = cv.arcLength(maxContour, true); 
-    // שינוי: עדכון דיוק סופי ל-0.04 כדי להבטיח זיהוי 4 פינות גם בצילום הסופי
-    cv.approxPolyDP(maxContour, approx, 0.04 * perimeter, true);
+    cv.approxPolyDP(maxContour, approx, APPROX_PRECISION * perimeter, true); 
 
     if (approx.rows !== 4) {
-        // נציג את המקור
+        // הצג את המקור אם לא נמצאו 4 פינות
         cv.imshow('canvasOutput', src); 
         approx.delete();
         src.delete(); gray.delete(); blur.delete(); canny.delete(); contours.delete(); hierarchy.delete();
         return;
     }
 
-    // 6. מיון הפינות
+    // 4. מיון הפינות
     let cornerPoints = [];
     for (let i = 0; i < approx.rows; i++) {
         cornerPoints.push({ x: approx.data32S[i * 2], y: approx.data32S[i * 2 + 1] });
     }
 
-    // פונקציית עזר למיון הפינות
+    // פונקציית עזר למיון הפינות (חובה ל-warpPerspective)
     function orderPoints(pts) {
         let sum = pts.map(p => p.x + p.y);
         let diff = pts.map(p => p.x - p.y);
         
-        let tl = pts[sum.indexOf(Math.min(...sum))]; 
-        let br = pts[sum.indexOf(Math.max(...sum))]; 
-        let tr = pts[diff.indexOf(Math.min(...diff))]; 
-        let bl = pts[diff.indexOf(Math.max(...diff))]; 
+        let tl = pts[sum.indexOf(Math.min(...sum))]; // Top-Left (TL)
+        let br = pts[sum.indexOf(Math.max(...sum))]; // Bottom-Right (BR)
+        let tr = pts[diff.indexOf(Math.min(...diff))]; // Top-Right (TR)
+        let bl = pts[diff.indexOf(Math.max(...diff))]; // Bottom-Left (BL)
 
         return [tl, tr, br, bl]; 
     }
     
     let ordered_pts = orderPoints(cornerPoints);
     
-    // 7. הגדרת מידות הפלט (יעד)
+    // 5. הגדרת מידות הפלט (יעד)
     let w1 = Math.sqrt(Math.pow(ordered_pts[2].x - ordered_pts[3].x, 2) + Math.pow(ordered_pts[2].y - ordered_pts[3].y, 2));
     let w2 = Math.sqrt(Math.pow(ordered_pts[1].x - ordered_pts[0].x, 2) + Math.pow(ordered_pts[1].y - ordered_pts[0].y, 2));
     let maxWidth = Math.max(w1, w2);
@@ -286,31 +298,31 @@ function processImageFinal(src) {
     
     let destPointsMat = cv.matFromArray(4, 1, cv.CV_32FC2, destPoints);
     
-    // 8. יצירת מטריצת הטרנספורמציה (המפה)
+    // 6. יצירת מטריצת הטרנספורמציה (המפה)
     let M = cv.getPerspectiveTransform(srcPointsMat, destPointsMat);
     
-    // 9. יישום הטרנספורמציה (Perspective Warp)
+    // 7. יישום הטרנספורמציה (Perspective Warp)
     let finalDst = new cv.Mat();
     let dsize = new cv.Size(maxWidth, maxHeight);
     
     cv.warpPerspective(src, finalDst, M, dsize, cv.INTER_LINEAR, cv.BORDER_CONSTANT, new cv.Scalar());
 
-    // 10. שיפור איכות סופי (המרה לשחור-לבן קלאסי)
+    // 8. שיפור איכות סופי (המרה לשחור-לבן קלאסי)
     let finalGray = new cv.Mat();
     cv.cvtColor(finalDst, finalGray, cv.COLOR_RGBA2GRAY, 0);
     // הוספת סף אדפטיבי לאיכות סריקה מעולה
     cv.adaptiveThreshold(finalGray, finalGray, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
 
 
-    // 11. הצגת התוצאה הסופית בקנבס
+    // 9. הצגת התוצאה הסופית בקנבס
     cv.imshow('canvasOutput', finalGray);
     
-    // 12. שחרור זיכרון (חובה!)
+    // 10. שחרור זיכרון (חובה!)
     gray.delete(); blur.delete(); canny.delete(); 
     contours.delete(); hierarchy.delete(); approx.delete();
     srcPointsMat.delete(); destPointsMat.delete(); M.delete();
     finalDst.delete(); finalGray.delete();
-    // לא משחררים את src כי הוא הגיע מהקריאה הראשית
+    // src לא נמחק כי הוא הגיע כארגומנט ונמחק על ידי הפונקציה הקוראת
     
     console.log("עיבוד תמונה הושלם. בוצע תיקון פרספקטיבה ושיפור איכות.");
 }
